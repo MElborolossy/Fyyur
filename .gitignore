@@ -2,4 +2,5 @@ FyyurSQLQuery.txt
 .idea
 migrations_windows
 migrations
+migrations_ubuntu
 __pycache__

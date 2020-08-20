@@ -6,6 +6,17 @@
 		<h1 class="monospace">
 			{{ venue.name }}
 		</h1>
+		<ul class="inline-list">
+			<li>
+				<form method="GET" class="form" action="/venues/{{ venue.id }}/edit">
+					<input type=submit value="Edit" class="btn">
+				</form>
+			</li>
+			<li>
+				<button id="delBtn" data="{{ venue.id }}" type=button onclick="onClickDelete()"
+					class="btn">Delete</button>
+			</li>
+		</ul>
 		<p class="subtitle">
 			ID: {{ venue.id }}
 		</p>
@@ -54,13 +65,10 @@
 			<h3 class="form-heading">Search for an Artist</h3>
 			<div class="form-group">
 				<label for="name">Name</label>
-				{{ form.name(class_ = 'form-control', autofocus = true) }}
+				{{ form.name(class_ = 'form-control') }}
 			</div>
 			<input type="submit" value="Choose Artist" class="btn btn-primary btn-lg btn-block">
 		</form>
-		<ul id="artists_result">
-
-		</ul>
 	</div>
 </section>
 <section>
@@ -93,5 +101,5 @@
 		{% endfor %}
 	</div>
 </section>
-
+<script src="{{ url_for('static', filename='js/delete.js')}}"></script>
 {% endblock %}

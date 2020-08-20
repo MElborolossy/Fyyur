@@ -209,3 +209,14 @@ h2.monospace {
 .subtitle {
   opacity: 0.5;
 }
+/*****************************************************************************
+  * Custom Styles
+  ****************************************************************************/
+ul.inline-list {
+  padding-inline-start: 0px;
+}
+
+ul.inline-list li {
+  list-style-type: none;
+  display: inline-block;
+}
