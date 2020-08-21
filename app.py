@@ -352,7 +352,7 @@ def show_artist(artist_id):
     venues_shows_infos = db.session.query(showTable,Venue.name.label('venue_name'), Venue.image_link.label('venue_image'))\
             .join(Venue, Venue.id == showTable.columns.venue_id)\
             .join(Artist, Artist.id == showTable.columns.artist_id)\
-            .filter(Venue.id == required_artist.id).all()
+            .filter(Artist.id == required_artist.id).all()
     for info in venues_shows_infos:
         # Check if the show was played or will be played in upcoming days
         if (str_to_datetime(info.start_time) > datetime.utcnow()):
