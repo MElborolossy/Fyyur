@@ -11,6 +11,7 @@ from babel import Locale
 from flask import Flask, render_template, request, Response, flash, redirect, url_for
 from flask_moment import Moment
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy.orm import backref
 from sqlalchemy.sql.functions import concat
 from flask_migrate import Migrate
 import logging
@@ -36,20 +37,15 @@ migrate = Migrate(app, db)
 # ----------------------------------------------------------------------------#
 # The relation ship will be Many-to-Many
 # Show Model As Assoiciation Table
-class Show(db.Model):
-    __tablename__ = 'Show'
-
-    artist_id = db.Column(db.Integer, db.ForeignKey('Artist.id'), primary_key=True)
-    venue_id = db.Column(db.Integer, db.ForeignKey('Venue.id'), primary_key=True)
-    start_time = db.Column(db.String(120), primary_key=True)
-    # relationships part
-    artist = db.relationship("Artist")
-    venue = db.relationship("Venue", cascade="delete")
-
+showTable = db.Table('shows',
+db.Column('artist_id', db.Integer, db.ForeignKey('artists.id'), primary_key=True),
+db.Column('venue_id', db.Integer, db.ForeignKey('venues.id'), primary_key=True),
+db.Column('start_time',db.String(120), primary_key=True)
+)
 
 # Venue Model connected with Artist through Show
 class Venue(db.Model):
-    __tablename__ = 'Venue'
+    __tablename__ = 'venues'
 
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String)
@@ -64,12 +60,11 @@ class Venue(db.Model):
     seeking_talent = db.Column(db.Boolean, default=True)
     seeking_description = db.Column(db.String(500), default="We are on the lookout for a local artist")
     # relationShip Part
-    artists = db.relationship("Show", cascade="delete")
-
+    artists = db.relationship("Artist", secondary=showTable, backref=db.backref('venues', lazy=True))
 
 # Artist Model connected with Venue through Show
 class Artist(db.Model):
-    __tablename__ = 'Artist'
+    __tablename__ = 'artists'
 
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String)
@@ -82,8 +77,6 @@ class Artist(db.Model):
     website = db.Column(db.String(120))
     seeking_venue = db.Column(db.Boolean, default=True)
     seeking_description = db.Column(db.String(500), default="Looking for shows to perform")
-    # relationShip Part
-    venues = db.relationship("Show")
 
 # ----------------------------------------------------------------------------#
 # Filters.
@@ -99,15 +92,12 @@ def format_datetime(value, format='full'):
         format = "EE MM, dd, y h:mma"
     return babel.dates.format_datetime(date, format, locale='en')
 
-
 app.jinja_env.filters['datetime'] = format_datetime
-
 
 # Convert string with specific format to datetime
 # used to compare the Show date to know if it is an upcoming or past show
 def str_to_datetime(date):
     return datetime.strptime(date, '%Y-%m-%d %H:%M:%S')
-
 
 # ----------------------------------------------------------------------------#
 # Controllers.
@@ -135,7 +125,11 @@ def venues():
             .filter(Venue.state.like(c_record.state)).all()
         for v_record in venue_records:
             # Get upcoming show
-            shows = v_record.artists
+            upcoming_shows = 0
+            shows = db.session.query(showTable)\
+            .join(Venue, Venue.id == showTable.c.venue_id)\
+            .join(Artist, Artist.id == showTable.columns.artist_id)\
+            .filter(Venue.id == v_record.id).all()
             for show in shows:
                 if str_to_datetime(show.start_time) > datetime.utcnow():
                     upcoming_shows += 1
@@ -157,7 +151,10 @@ def search_venues():
     for result in results:
         upcoming_shows = 0
         # Get upcoming show counts
-        shows = result.artists
+        shows = db.session.query(showTable)\
+            .join(Venue, Venue.id == showTable.c.venue_id)\
+            .join(Artist, Artist.id == showTable.columns.artist_id)\
+            .filter(Venue.id == result.id).all()
         for show in shows:
             if str_to_datetime(show.start_time) > datetime.utcnow():
                 upcoming_shows += 1
@@ -202,23 +199,27 @@ def show_venue(venue_id):
     upcoming_shows = []
     past_count = 0
     upcoming_count = 0
-    for show in required_venue.artists:
+    artists_shows_infos = db.session.query(showTable,Artist.name.label('artist_name'), Artist.image_link.label('artist_image'))\
+            .join(Venue, Venue.id == showTable.columns.venue_id)\
+            .join(Artist, Artist.id == showTable.columns.artist_id)\
+            .filter(Venue.id == required_venue.id).all()
+    for info in artists_shows_infos:
         # Check if the show was played or will be played in upcoming days
-        if str_to_datetime(show.start_time) > datetime.utcnow():
+        if str_to_datetime(info.start_time) > datetime.utcnow():
             upcoming_count += 1
             upcoming_shows.append({
-                "artist_id": show.artist_id,
-                "artist_name": show.artist.name,
-                "artist_image_link": show.artist.image_link,
-                "start_time": show.start_time
+                "artist_id": info.artist_id,
+                "artist_name": info.artist_name,
+                "artist_image_link": info.artist_image,
+                "start_time": info.start_time
             })
         else:
             past_count += 1
             past_shows.append({
-                "artist_id": show.artist_id,
-                "artist_name": show.artist.name,
-                "artist_image_link": show.artist.image_link,
-                "start_time": show.start_time
+                "artist_id": info.artist_id,
+                "artist_name": info.artist_name,
+                "artist_image_link": info.artist_image,
+                "start_time": info.start_time
             })
     # Update the data dictionary with the shows information
     data.update({"past_shows": past_shows})
@@ -348,23 +349,27 @@ def show_artist(artist_id):
     upcoming_shows = []
     past_count = 0
     upcoming_count = 0
-    for show in required_artist.venues:
+    venues_shows_infos = db.session.query(showTable,Venue.name.label('venue_name'), Venue.image_link.label('venue_image'))\
+            .join(Venue, Venue.id == showTable.columns.venue_id)\
+            .join(Artist, Artist.id == showTable.columns.artist_id)\
+            .filter(Venue.id == required_artist.id).all()
+    for info in venues_shows_infos:
         # Check if the show was played or will be played in upcoming days
-        if (str_to_datetime(show.start_time) > datetime.utcnow()):
+        if (str_to_datetime(info.start_time) > datetime.utcnow()):
             upcoming_count += 1
             upcoming_shows.append({
-                "venue_id": show.venue_id,
-                "venue_name": show.venue.name,
-                "venue_image_link": show.venue.image_link,
-                "start_time": show.start_time
+                "venue_id": info.venue_id,
+                "venue_name": info.venue_name,
+                "venue_image_link": info.venue_image,
+                "start_time": info.start_time
             })
         else:
             past_count += 1
             past_shows.append({
-                "venue_id": show.venue_id,
-                "venue_name": show.venue.name,
-                "venue_image_link": show.venue.image_link,
-                "start_time": show.start_time
+                "venue_id": info.venue_id,
+                "venue_name": info.venue_name,
+                "venue_image_link": info.venue_image,
+                "start_time": info.start_time
             })
     # Update the data dictionary with the shows information
     data.update({"past_shows": past_shows})
@@ -530,19 +535,18 @@ def edit_venue_submission(venue_id):
 def shows():
     data = []
     # Get all the artist from db
-    all_shows = Show.query.all()
-    for show in all_shows:
-        # Get Venue Object from show object data
-        venue = Venue.query.get(show.venue_id)
-        # Get Artist Object from show object data
-        artist = Artist.query.get(show.artist_id)
-        # Update data list with the show information
-        data.append({"venue_id": venue.id,
-                     "venue_name": venue.name,
-                     "artist_id": artist.id,
-                     "artist_name": artist.name,
-                     "artist_image_link": artist.image_link,
-                     "start_time": show.start_time
+    all_shows = db.session.query(showTable,Venue.name.label('venue_name'),
+    Artist.name.label('artist_name'),Artist.image_link.label('artist_image'))\
+            .join(Venue, Venue.id == showTable.columns.venue_id)\
+            .join(Artist, Artist.id == showTable.columns.artist_id)\
+            .all()
+    for show_info in all_shows:
+        data.append({"venue_id": show_info.venue_id,
+                     "venue_name": show_info.venue_name,
+                     "artist_id": show_info.artist_id,
+                     "artist_name": show_info.artist_name,
+                     "artist_image_link": show_info.artist_image,
+                     "start_time": show_info.start_time
                      })
     return render_template('pages/shows.html', shows=data)
 
@@ -573,15 +577,13 @@ def create_show_submission():
     error = False
     try:
          # Get the data from the form to save it in the database
-        venue_object = Venue.query.get(request.form['venue_id'])
-        artist_object = Artist.query.get(request.form['artist_id'])
-        show = Show(
-            venue=venue_object,
-            artist=artist_object,
-            start_time=request.form['start_time']
-        )
+        insertShow = showTable.insert().values(
+            {"venue_id":request.form['venue_id'], 
+            "artist_id":request.form['artist_id'], 
+            "start_time" : request.form['start_time']}
+            )
         # Add the Show Object to the db session
-        db.session.add(show)
+        db.session.execute(insertShow)
         db.session.commit()
     except:
         # Error handling by flash a warning message

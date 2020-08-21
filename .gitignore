@@ -4,3 +4,4 @@ migrations_windows
 migrations
 migrations_ubuntu
 __pycache__
+app_old.py
